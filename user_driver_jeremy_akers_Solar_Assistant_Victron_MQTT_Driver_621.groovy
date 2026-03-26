@@ -1,5 +1,5 @@
 /**
- *  ****************  Solar Assistant MQTT Driver  ****************
+ *  ****************  Solar Assistant / Victron GX MQTT Driver  ****************
  *
  *  This driver is based on Aaron Ward's driver located here: https://raw.githubusercontent.com/PrayerfulDrop/Hubitat/master/drivers/Generic%20MQTT%20Client.groovy
  *
@@ -23,6 +23,7 @@
  *
  *
  *  Changes:
+ *  2.1.0 - Renamed driver to Solar Assistant / Victron GX MQTT Driver and updated it to work with Solar Assistant
  *  2.0.0 - Forked from Aaron Ward's driver and modified to poll specific MQTT topics for Victron devices such as voltage, power, energy, temperature, etc
  *  1.0.4 - added generic notification and hub event support
  *  1.0.3 - added retained and QOS support
@@ -34,7 +35,7 @@ import groovy.json.JsonSlurper
 import groovy.json.JsonOutput
 
 metadata {
-    definition (name: "Solar Assistant MQTT Driver", namespace: "jeremy.akers", author: "Jeremy Akers & Aaron Ward") {
+    definition (name: "Solar Assistant / Victron GX MQTT Driver", namespace: "jeremy.akers", author: "Jeremy Akers & Aaron Ward") {
         capability "Initialize"
         capability "Notification"
         capability "Sensor"
@@ -66,6 +67,7 @@ metadata {
     preferences {
         input name: "polltime", type: "number", title:"How often to keepalive in minutes", description:"Keepalive time (minutes)", required: false, displayDuringSetup: true
         input name: "MQTTBroker", type: "text", title: "MQTT Broker Address:", required: true, displayDuringSetup: true
+		input name: "MQTTBrokerFallback", type: "text", title: "Fallback MQTT Broker Address:", description: "Optional backup broker address", required: false, displayDuringSetup: true
 		input name: "username", type: "text", title: "MQTT Username:", description: "(blank if none)", required: false, displayDuringSetup: true
 		input name: "password", type: "password", title: "MQTT Password:", description: "(blank if none)", required: false, displayDuringSetup: true
         input name: "keepalive_topic", type: "text", title: "KeepAlive Topic:", description: "Example Topic (topic/device/#)", required: false, displayDuringSetup: true
@@ -103,9 +105,73 @@ def installed() {
     log.info "installed..."
 }
 
+def getBrokerLabel(useFallbackBroker = false)
+{
+    return useFallbackBroker ? "fallback" : "primary"
+}
+
+def getBrokerAddress(useFallbackBroker = false)
+{
+    return useFallbackBroker ? settings?.MQTTBrokerFallback : settings?.MQTTBroker
+}
+
+def subscribeToTopics()
+{
+    if(settings?.switch_topic)
+    {
+	    log.info "Subscribed to: ${settings?.switch_topic}"
+        interfaces.mqtt.subscribe(settings?.switch_topic)
+    }
+    if(settings?.voltage_topic)
+    {
+	    log.info "Subscribed to: ${settings?.voltage_topic}"
+        interfaces.mqtt.subscribe(settings?.voltage_topic)
+    }
+    if(settings?.min_cell_voltage_topic)
+    {
+	    log.info "Subscribed to: ${settings?.min_cell_voltage_topic}"
+        interfaces.mqtt.subscribe(settings?.min_cell_voltage_topic)
+    }
+    if(settings?.max_cell_voltage_topic)
+    {
+	    log.info "Subscribed to: ${settings?.max_cell_voltage_topic}"
+        interfaces.mqtt.subscribe(settings?.max_cell_voltage_topic)
+    }        
+    if(settings?.power_topic)
+    {
+	    log.info "Subscribed to: ${settings?.power_topic}"
+        interfaces.mqtt.subscribe(settings?.power_topic)
+    }
+    if(settings?.load_topic)
+    {
+	    log.info "Subscribed to: ${settings?.power_topic}"
+        interfaces.mqtt.subscribe(settings?.load_topic)
+    }
+    if(settings?.energy_topic)
+    {
+	    log.info "Subscribed to: ${settings?.energy_topic}"
+        interfaces.mqtt.subscribe(settings?.energy_topic)
+    }
+    if(settings?.soc_topic)
+    {
+	    log.info "Subscribed to: ${settings?.soc_topic}"
+        interfaces.mqtt.subscribe(settings?.soc_topic)
+    }     
+    if(settings?.temp_topic)
+    {
+	    log.info "Subscribed to: ${settings?.temp_topic}"
+        interfaces.mqtt.subscribe(settings?.temp_topic)
+    }    
+    if(settings?.charge_limit)
+    {
+	    log.info "Subscribed to: ${settings?.charge_limit}"
+        interfaces.mqtt.subscribe(settings?.charge_limit)
+    }
+}
+
 def setVersion(){
-    appName = "MQTT_Solar_Assistant_Driver"
-	version = "2.0.0" 
+    appName = "Solar_Assistant_Victron_GX_MQTT_Driver"
+	version = "2.1.0" 
     dwInfo = "${appName}:${version}"
     sendEvent(name: "dwDriverInfo", value: dwInfo, displayed: true)
 }
@@ -453,7 +519,7 @@ def uninstalled() {
 }
 
 
-def initialize() {
+def initialize(useFallbackBroker = false, retryPrimaryAfterFallbackFailure = false) {
 	if (logEnable) runIn(900,logsOff)
 	try {
         if(settings?.retained==null) settings?.retained=false
@@ -464,70 +530,37 @@ def initialize() {
         state.energycount=0
         state.powers=[]
         state.monitored_battery_soc = 0
+        state.activeBroker = getBrokerLabel(useFallbackBroker)
         //open connection
-		mqttbroker = "tcp://" + settings?.MQTTBroker + ":1883"
+		brokerAddress = getBrokerAddress(useFallbackBroker)
+		mqttbroker = "tcp://" + brokerAddress + ":1883"
+        log.info "Connecting to ${state.activeBroker} MQTT broker at ${brokerAddress}"
         interfaces.mqtt.connect(mqttbroker, device.getName(), settings?.username,settings?.password)
         //give it a chance to start
         pauseExecution(1000)
-        log.info "Connection established for: " + device.getName()
-        sendEvent(name: "status", value: "connected", unit: "message", descriptionText: "Connected to MQTT", isStateChange: true)
-        if(settings?.switch_topic)
-        {
-		    log.info "Subscribed to: ${settings?.switch_topic}"
-            interfaces.mqtt.subscribe(settings?.switch_topic)
-        }
-        if(settings?.voltage_topic)
-        {
-		    log.info "Subscribed to: ${settings?.voltage_topic}"
-            interfaces.mqtt.subscribe(settings?.voltage_topic)
-        }
-        if(settings?.min_cell_voltage_topic)
-        {
-		    log.info "Subscribed to: ${settings?.min_cell_voltage_topic}"
-            interfaces.mqtt.subscribe(settings?.min_cell_voltage_topic)
-        }
-        if(settings?.max_cell_voltage_topic)
-        {
-		    log.info "Subscribed to: ${settings?.max_cell_voltage_topic}"
-            interfaces.mqtt.subscribe(settings?.max_cell_voltage_topic)
-        }        
-        if(settings?.power_topic)
-        {
-		    log.info "Subscribed to: ${settings?.power_topic}"
-            interfaces.mqtt.subscribe(settings?.power_topic)
-        }
-        if(settings?.load_topic)
-        {
-		    log.info "Subscribed to: ${settings?.power_topic}"
-            interfaces.mqtt.subscribe(settings?.load_topic)
-        }
-        if(settings?.energy_topic)
-        {
-		    log.info "Subscribed to: ${settings?.energy_topic}"
-            interfaces.mqtt.subscribe(settings?.energy_topic)
-        }
-        if(settings?.soc_topic)
-        {
-		    log.info "Subscribed to: ${settings?.soc_topic}"
-            interfaces.mqtt.subscribe(settings?.soc_topic)
-        }     
-        if(settings?.temp_topic)
-        {
-		    log.info "Subscribed to: ${settings?.temp_topic}"
-            interfaces.mqtt.subscribe(settings?.temp_topic)
-        }    
-        if(settings?.charge_limit)
-        {
-		    log.info "Subscribed to: ${settings?.charge_limit}"
-            interfaces.mqtt.subscribe(settings?.charge_limit)
-        }  
+        log.info "Connection established for: " + device.getName() + " using ${state.activeBroker} broker"
+        sendEvent(name: "status", value: "connected", unit: "message", descriptionText: "Connected to ${state.activeBroker} MQTT broker", isStateChange: true)
+        subscribeToTopics()
     } 
     catch(e) 
     {
         log.debug "Initialize error: ${e.toString()}"
         log.debug "Caused by: ${e.getCause()}"
         log.debug "Stacktrace: ${e.stackTrace}"
-        sendEvent(name: "status", value: "error", unit: "message", descriptionText: e.toString(), isStateChange: true)
+        if(!useFallbackBroker && settings?.MQTTBrokerFallback)
+        {
+            log.warn "Primary MQTT broker connection failed, trying fallback broker"
+            initialize(true, retryPrimaryAfterFallbackFailure)
+        }
+        else if(useFallbackBroker && retryPrimaryAfterFallbackFailure)
+        {
+            log.warn "Fallback MQTT broker connection failed, retrying primary broker"
+            initialize(false, false)
+        }
+        else
+        {
+            sendEvent(name: "status", value: "error", unit: "message", descriptionText: e.toString(), isStateChange: true)
+        }
     }
 }
 
@@ -536,7 +569,16 @@ def mqttClientStatus(String status){
     if (status.startsWith("Error"))
     {
         sendEvent(name: "status", value: "error", unit: "message", descriptionText: status, isStateChange: true)
-        initialize()
+        if(state.activeBroker != "fallback" && settings?.MQTTBrokerFallback)
+        {
+            log.warn "MQTT primary broker error, trying fallback broker"
+            initialize(true, true)
+        }
+        else
+        {
+            log.warn "MQTT connection error on ${state.activeBroker ?: 'primary'} broker. Retrying connection."
+            initialize(false, false)
+        }
     }
 }
 
