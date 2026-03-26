@@ -519,7 +519,7 @@ def uninstalled() {
 }
 
 
-def initialize(useFallbackBroker = false) {
+def initialize(useFallbackBroker = false, retryPrimaryAfterFallbackFailure = false) {
 	if (logEnable) runIn(900,logsOff)
 	try {
         if(settings?.retained==null) settings?.retained=false
@@ -550,7 +550,12 @@ def initialize(useFallbackBroker = false) {
         if(!useFallbackBroker && settings?.MQTTBrokerFallback)
         {
             log.warn "Primary MQTT broker connection failed, trying fallback broker"
-            initialize(true)
+            initialize(true, retryPrimaryAfterFallbackFailure)
+        }
+        else if(useFallbackBroker && retryPrimaryAfterFallbackFailure)
+        {
+            log.warn "Fallback MQTT broker connection failed, retrying primary broker"
+            initialize(false, false)
         }
         else
         {
@@ -567,12 +572,12 @@ def mqttClientStatus(String status){
         if(state.activeBroker != "fallback" && settings?.MQTTBrokerFallback)
         {
             log.warn "MQTT primary broker error, trying fallback broker"
-            initialize(true)
+            initialize(true, true)
         }
         else
         {
             log.warn "MQTT connection error on ${state.activeBroker ?: 'primary'} broker. Retrying connection."
-            initialize()
+            initialize(false, false)
         }
     }
 }
