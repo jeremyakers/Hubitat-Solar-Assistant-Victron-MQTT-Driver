@@ -571,7 +571,8 @@ def mqttClientStatus(String status){
         }
         else
         {
-            log.warn "MQTT connection error on ${state.activeBroker ?: 'primary'} broker. Waiting for next reconnect cycle."
+            log.warn "MQTT connection error on ${state.activeBroker ?: 'primary'} broker. Retrying connection."
+            initialize()
         }
     }
 }
