@@ -35,7 +35,7 @@ import groovy.json.JsonSlurper
 import groovy.json.JsonOutput
 
 metadata {
-    definition (name: "Solar Assistant / Victron GX MQTT Driver", namespace: "jeremy.akers", author: "Jeremy Akers & Aaron Ward") {
+    definition (name: "Solar Assistant / Victron GX MQTT Driver", namespace: "jeremy.akers", author: "Jeremy Akers & Aaron Ward", importUrl: "https://raw.githubusercontent.com/jeremyakers/Hubitat-Solar-Assistant-Victron-MQTT-Driver/main/user_driver_jeremy_akers_Solar_Assistant_Victron_MQTT_Driver_621.groovy") {
         capability "Initialize"
         capability "Notification"
         capability "Sensor"
